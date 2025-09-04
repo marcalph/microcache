@@ -1,5 +1,7 @@
-import time, asyncio, threading, multiprocessing
+import time
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing  # Still needed for Pool in mp_run if ProcessPoolExecutor fails
 
 N_TASKS = 5
 WORK = 10**7  # adjust to see CPU differences
@@ -34,10 +36,13 @@ def sequential(func):
 # Threading
 # ----------------------------
 def threading_run(func):
+    """Use ThreadPoolExecutor instead of manual thread management."""
     start = time.time()
-    threads = [threading.Thread(target=func) for _ in range(N_TASKS)]
-    [t.start() for t in threads]
-    [t.join() for t in threads]
+    with ThreadPoolExecutor(max_workers=N_TASKS) as executor:
+        futures = [executor.submit(func) for _ in range(N_TASKS)]
+        # Wait for all futures to complete
+        for future in futures:
+            future.result()
     return time.time() - start
 
 
@@ -49,9 +54,13 @@ def mp_worker(args):
     return func()
 
 def mp_run(func):
+    """Use ProcessPoolExecutor for cleaner multiprocessing."""
     start = time.time()
-    with multiprocessing.Pool(N_TASKS) as pool:
-        pool.map(mp_worker, [(func, i) for i in range(N_TASKS)])
+    with ProcessPoolExecutor(max_workers=N_TASKS) as executor:
+        futures = [executor.submit(mp_worker, (func, i)) for i in range(N_TASKS)]
+        # Wait for all futures and handle results
+        for future in futures:
+            future.result()
     return time.time() - start
 
 # ----------------------------
@@ -67,9 +76,17 @@ async def asyncio_worker(func):
         return await loop.run_in_executor(None, func)
 
 async def asyncio_run(func):
+    """Use asyncio.gather for cleaner task management."""
     start = time.time()
-    tasks = [asyncio.create_task(asyncio_worker(func)) for _ in range(N_TASKS)]
-    await asyncio.gather(*tasks)
+    # Create and gather all tasks in one statement
+    results = await asyncio.gather(
+        *[asyncio_worker(func) for _ in range(N_TASKS)],
+        return_exceptions=True
+    )
+    # Handle any exceptions that occurred
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
     return time.time() - start
 
 
@@ -77,10 +94,18 @@ async def asyncio_run(func):
 # Thread + Async (async coros dispatch work to thread pool)
 # ----------------------------
 async def async_thread(func):
+    """Properly sized ThreadPoolExecutor with asyncio."""
     loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor() as pool:
-        futures = [loop.run_in_executor(pool, func) for _ in range(N_TASKS)]
-        await asyncio.gather(*futures)
+    with ThreadPoolExecutor(max_workers=N_TASKS) as pool:
+        # Use gather with executor futures
+        results = await asyncio.gather(
+            *[loop.run_in_executor(pool, func) for _ in range(N_TASKS)],
+            return_exceptions=True
+        )
+        # Handle any exceptions
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
 
 def thread_async_run(func):
     start = time.time()
@@ -92,10 +117,18 @@ def thread_async_run(func):
 # MP + Async (async dispatch to process pool)
 # ----------------------------
 async def async_mp(func):
+    """Properly sized ProcessPoolExecutor with asyncio."""
     loop = asyncio.get_running_loop()
-    with ProcessPoolExecutor() as pool:
-        futures = [loop.run_in_executor(pool, func) for _ in range(N_TASKS)]
-        await asyncio.gather(*futures)
+    with ProcessPoolExecutor(max_workers=N_TASKS) as pool:
+        # Use gather with executor futures
+        results = await asyncio.gather(
+            *[loop.run_in_executor(pool, func) for _ in range(N_TASKS)],
+            return_exceptions=True
+        )
+        # Handle any exceptions
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
 
 def mp_async_run(func):
     start = time.time()
@@ -107,13 +140,33 @@ def mp_async_run(func):
 # Benchmark runner
 # ----------------------------
 def benchmark(func, label):
+    """Run benchmarks with proper error handling."""
     print(f"\n=== {label} ===")
-    print("Sequential:", sequential(func))
-    print("Threading :", threading_run(func))
-    print("Asyncio   :", asyncio.run(asyncio_run(func)))
-    print("Multiproc :", mp_run(func))
-    print("Thread+Async:", thread_async_run(func))
-    print("MP+Async    :", mp_async_run(func))
+    
+    results = {}
+    benchmarks = [
+        ("Sequential", lambda: sequential(func)),
+        ("Threading", lambda: threading_run(func)),
+        ("Asyncio", lambda: asyncio.run(asyncio_run(func))),
+        ("Multiproc", lambda: mp_run(func)),
+        ("Thread+Async", lambda: thread_async_run(func)),
+        ("MP+Async", lambda: mp_async_run(func))
+    ]
+    
+    for name, bench_func in benchmarks:
+        try:
+            result = bench_func()
+            results[name] = result
+            print(f"{name:12}: {result:.4f}s")
+        except Exception as e:
+            print(f"{name:12}: Failed - {e}")
+            results[name] = None
+    
+    # Find and display the fastest method
+    valid_results = {k: v for k, v in results.items() if v is not None}
+    if valid_results:
+        fastest = min(valid_results.items(), key=lambda x: x[1])
+        print(f"\n🏆 Fastest: {fastest[0]} ({fastest[1]:.4f}s)")
 
 
 if __name__ == "__main__":
