@@ -5,8 +5,8 @@ import logging
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class MessageParser:
 
     def __call__(self, data):
         self.buffer += data
-        
+
         # Parse RESP protocol
         if self.buffer.startswith("*"):
             try:
@@ -42,15 +42,15 @@ class MessageParser:
         lines = self.buffer.split("\r\n")
         if not lines[0].startswith("*"):
             return None
-            
+
         num_args = int(lines[0][1:])
         args = []
         line_idx = 1
-        
+
         for _ in range(num_args):
             if line_idx >= len(lines):
                 return None  # Incomplete message
-                
+
             if lines[line_idx].startswith("$"):
                 # Skip the length line, just get the string content
                 line_idx += 1
@@ -61,13 +61,13 @@ class MessageParser:
             else:
                 args.append(lines[line_idx])
                 line_idx += 1
-                
+
         return args
 
     def _handle_command(self, parts):
         if not parts:
             return
-            
+
         command = parts[0].lower()
         match command:
             case "echo":
@@ -95,8 +95,6 @@ class MessageParser:
         self.client_socket.sendall(b"+PONG\r\n")
 
 
-
-
 def handle_client(client_socket, client_address):
     parser = MessageParser(client_socket)
     try:
@@ -104,13 +102,11 @@ def handle_client(client_socket, client_address):
             request = client_socket.recv(512)
             if not request:
                 break
-            
+
             data = request.decode()
             logger.info(f"Received: {data!r} from {client_address}")
             parser(data)
-            
 
-                
     except Exception as e:
         logger.error(f"Error handling client {client_address}: {e}")
     finally:
@@ -121,14 +117,14 @@ def handle_client(client_socket, client_address):
 def main():
     server_socket = socket.create_server(("127.0.0.1", 6379), reuse_port=True)
     logger.info("Server listening on localhost:6379")
-    
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         try:
             while True:
                 client_socket, client_address = server_socket.accept()
                 logger.info(f"Client connected: {client_address}")
                 executor.submit(handle_client, client_socket, client_address)
-                
+
         except KeyboardInterrupt:
             logger.info("Shutting down server...")
         finally:

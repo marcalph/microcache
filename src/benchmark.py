@@ -1,7 +1,6 @@
 import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import multiprocessing  # Still needed for Pool in mp_run if ProcessPoolExecutor fails
 
 N_TASKS = 5
 WORK = 10**7  # adjust to see CPU differences
@@ -11,11 +10,13 @@ WORK = 10**7  # adjust to see CPU differences
 # Workloads
 # ----------------------------
 def cpu_bound(n=WORK):
-    return sum(i*i for i in range(n))
+    return sum(i * i for i in range(n))
+
 
 def io_bound():
     time.sleep(1)
     return "done"
+
 
 def hybrid():
     time.sleep(0.5)
@@ -53,6 +54,7 @@ def mp_worker(args):
     func, _ = args
     return func()
 
+
 def mp_run(func):
     """Use ProcessPoolExecutor for cleaner multiprocessing."""
     start = time.time()
@@ -62,6 +64,7 @@ def mp_run(func):
         for future in futures:
             future.result()
     return time.time() - start
+
 
 # ----------------------------
 # Asyncio
@@ -75,13 +78,13 @@ async def asyncio_worker(func):
         # offload sync func to thread pool
         return await loop.run_in_executor(None, func)
 
+
 async def asyncio_run(func):
     """Use asyncio.gather for cleaner task management."""
     start = time.time()
     # Create and gather all tasks in one statement
     results = await asyncio.gather(
-        *[asyncio_worker(func) for _ in range(N_TASKS)],
-        return_exceptions=True
+        *[asyncio_worker(func) for _ in range(N_TASKS)], return_exceptions=True
     )
     # Handle any exceptions that occurred
     for result in results:
@@ -100,12 +103,13 @@ async def async_thread(func):
         # Use gather with executor futures
         results = await asyncio.gather(
             *[loop.run_in_executor(pool, func) for _ in range(N_TASKS)],
-            return_exceptions=True
+            return_exceptions=True,
         )
         # Handle any exceptions
         for result in results:
             if isinstance(result, Exception):
                 raise result
+
 
 def thread_async_run(func):
     start = time.time()
@@ -123,12 +127,13 @@ async def async_mp(func):
         # Use gather with executor futures
         results = await asyncio.gather(
             *[loop.run_in_executor(pool, func) for _ in range(N_TASKS)],
-            return_exceptions=True
+            return_exceptions=True,
         )
         # Handle any exceptions
         for result in results:
             if isinstance(result, Exception):
                 raise result
+
 
 def mp_async_run(func):
     start = time.time()
@@ -142,7 +147,7 @@ def mp_async_run(func):
 def benchmark(func, label):
     """Run benchmarks with proper error handling."""
     print(f"\n=== {label} ===")
-    
+
     results = {}
     benchmarks = [
         ("Sequential", lambda: sequential(func)),
@@ -150,9 +155,9 @@ def benchmark(func, label):
         ("Asyncio", lambda: asyncio.run(asyncio_run(func))),
         ("Multiproc", lambda: mp_run(func)),
         ("Thread+Async", lambda: thread_async_run(func)),
-        ("MP+Async", lambda: mp_async_run(func))
+        ("MP+Async", lambda: mp_async_run(func)),
     ]
-    
+
     for name, bench_func in benchmarks:
         try:
             result = bench_func()
@@ -161,7 +166,7 @@ def benchmark(func, label):
         except Exception as e:
             print(f"{name:12}: Failed - {e}")
             results[name] = None
-    
+
     # Find and display the fastest method
     valid_results = {k: v for k, v in results.items() if v is not None}
     if valid_results:
