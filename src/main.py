@@ -1,9 +1,22 @@
 import asyncio
+import logging
+import sys
+from message_parser import RESPParser, CommandHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
 
 
 async def handle_client(reader, writer):
     client_addr = writer.get_extra_info("peername")
-    print(f"Client connected: {client_addr}")
+    logger.info(f"Client connected: {client_addr}")
+
+    parser = RESPParser()
+    handler = CommandHandler()
 
     try:
         while True:
@@ -11,25 +24,32 @@ async def handle_client(reader, writer):
             if not data:
                 break
 
-            message = data.decode()
+            logger.info(f"Received: {data!r} from {client_addr}")
 
-            if "ping" in message.lower():
-                writer.write(b"+PONG\r\n")
+            # Parse commands from the received data
+            commands = parser.feed(data)
+
+            # Process each command
+            for command in commands:
+                logger.info(f"Processing command: {command}")
+                response = await handler.handle_command(command)
+                writer.write(response)
                 await writer.drain()
+                logger.info(f"Sent response: {response!r}")
 
     except Exception as e:
-        print(f"Error handling client {client_addr}: {e}")
+        logger.error(f"Error handling client {client_addr}: {e}")
     finally:
         writer.close()
         await writer.wait_closed()
-        print(f"Client disconnected: {client_addr}")
+        logger.info(f"Client disconnected: {client_addr}")
 
 
 async def start_server(host="localhost", port=6379):
     server = await asyncio.start_server(handle_client, host, port)
 
     addr = server.sockets[0].getsockname()
-    print(f"Async Redis server listening on {addr[0]}:{addr[1]}")
+    logger.info(f"Async Redis server listening on {addr[0]}:{addr[1]}")
 
     async with server:
         await server.serve_forever()
